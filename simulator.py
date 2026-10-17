@@ -13,6 +13,14 @@ def num(t): return t % 9 + 1
 def suit(t): return t // 9
 
 
+def tile_name(t):
+    return f'{num(t)}{"p" if suit(t) == 0 else "s"}'
+
+
+def hand_text(h):
+    return ' '.join(tile_name(t) for t in sorted(h))
+
+
 def all_decompositions(tiles, melds_needed):
     if len(tiles) != melds_needed * 3 + 2:
         return []
@@ -99,6 +107,29 @@ def score(p,dora,tsumo=False,rinshan=False):
     return max(results,key=lambda x:x[0])
 
 
+def explain_score(p, dora, e, tsumo=False, rinshan=False):
+    if not e: return 'no winning hand'
+    decs=winparts(p)
+    special=e[1]
+    chosen=None
+    for dec in decs:
+        if special:
+            sb=dict((('chin_yao',20),('all_green',15),('super_red',10))).get(special,0)
+            if _base_score(list(dec)+list(p.m))+sb == e[0]:
+                chosen=dec; break
+        else:
+            s,y=_ordinary_score(p,dec,dora,tsumo,rinshan)
+            if s == e[0] and y == e[2]: chosen=dec; break
+    if chosen is None and decs: chosen=decs[0]
+    ms=list(chosen or [])+list(p.m)
+    base=_base_score(ms)
+    allx=p.all()
+    if special:
+        return f'base={base}, special={special}, special_points={e[0]-base}, total={e[0]}, decomposition={[(k, tuple(tile_name(x) for x in ts)) for k,ts in (chosen or [])]}'
+    red=sum(x in RED for x in allx); d=sum(x==dora for x in allx)
+    return f'base={base}, yaku={e[2]}, red={red}, dora={d}, total={e[0]}, decomposition={[(k, tuple(tile_name(x) for x in ts)) for k,ts in ms]}'
+
+
 def tile_value(p,t):
     c=Counter(p.h); n=num(t); v=(c[t]-1)*2.0
     if 2<=n<=8: v+=0.35
@@ -142,56 +173,76 @@ def result(draws,method,e,calls,kans):
     return {'draws':draws,'method':method,'score':e[0] if e else 0,'yakuman':e[1] or '' if e else '','yaku':','.join(e[2]) if e else '','calls':calls,'kans':kans}
 
 
-def play(minscore,r):
+def play(minscore,r,debug=None):
+    def log(msg):
+        if debug is not None: debug.write(msg + '\n')
+
     deck=[t for t in T for _ in range(4)]; r.shuffle(deck)
     dora=deck.pop(); rinshan=[deck.pop() for _ in range(4)]; live=deck
     ps=[P() for _ in range(4)]
     for _ in range(7):
         for p in ps: p.h.append(live.pop())
     turn=0; rin_i=0; calls=kans=0
+    log(f'DORA {tile_name(dora)}')
+    for i,p in enumerate(ps): log(f'P{i+1} START {hand_text(p.h)}')
 
     for draw_no in range(1,40):
         if not live: break
         p=ps[turn]; p.h.append(live.pop())
+        log(f'TURN {draw_no} P{turn+1} DRAW {tile_name(p.h[-1])} HAND {hand_text(p.h)} OPEN {p.m} DISCARD {hand_text(p.d)}')
 
         e=score(p,dora,tsumo=True)
-        if e and e[0]>=minscore: return result(draw_no,'tsumo',e,calls,kans)
+        if e and e[0]>=minscore:
+            log(f'WIN TSUMO P{turn+1} SCORE {e[0]} {explain_score(p,dora,e,True,False)}')
+            return result(draw_no,'tsumo',e,calls,kans)
 
-        # Ankan: remove four, expose as a kan, draw rinshan, then either win or discard.
         aks=can_ankan(p)
         if aks and rin_i<4:
             kt=aks[0]
             _remove(p.h,[kt]*4); p.m.append(('kan',(kt,kt,kt,kt))); kans+=1
+            log(f'ANKAN P{turn+1} TILE {tile_name(kt)}')
             p.h.append(rinshan[rin_i]); rin_i+=1
+            log(f'RINSHAN P{turn+1} DRAW {tile_name(p.h[-1])} HAND {hand_text(p.h)}')
             e=score(p,dora,tsumo=True,rinshan=True)
-            if e and e[0]>=minscore: return result(draw_no,'tsumo',e,calls,kans)
+            if e and e[0]>=minscore:
+                log(f'WIN RINSHAN P{turn+1} SCORE {e[0]} {explain_score(p,dora,e,True,True)}')
+                return result(draw_no,'tsumo',e,calls,kans)
 
         q=discard(p,r); p.h.remove(q); p.d.append(q); p.f.add(q)
+        log(f'DISCARD P{turn+1} {tile_name(q)}')
 
-        # Ron priority. A discarded tile never remains in the winner's hand.
         rons=[]
         for j,o in enumerate(ps):
             if j==turn or q in o.f: continue
             o.h.append(q); e=score(o,dora,tsumo=False); o.h.pop()
             if e and e[0]>=minscore: rons.append((j,e))
         if rons:
-            return result(draw_no,'ron',rons[0][1],calls,kans)
+            for j,e in rons: log(f'RON CANDIDATE P{j+1} SCORE {e[0]}')
+            j,e=rons[0]
+            o=ps[j]; o.h.append(q)
+            log(f'WIN RON P{j+1} ON P{turn+1} TILE {tile_name(q)} SCORE {e[0]} {explain_score(o,dora,e,False,False)}')
+            o.h.pop()
+            return result(draw_no,'ron',e,calls,kans)
 
-        # Pon priority over chi. A call always consumes the discard and immediately discards one tile.
         pon=[j for j,o in enumerate(ps) if j!=turn and can_pon(o,q)]
         if pon and r.random()<0.16:
             caller=r.choice(pon); o=ps[caller]
             _remove(o.h,[q,q]); o.m.append(('pon',(q,q,q))); o.closed=False; calls+=1
-            q2=discard(o,r); o.h.remove(q2); o.d.append(q2); o.f.add(q2); turn=caller; continue
+            log(f'PON P{caller+1} ON P{turn+1} TILE {tile_name(q)}')
+            q2=discard(o,r); o.h.remove(q2); o.d.append(q2); o.f.add(q2); log(f'DISCARD P{caller+1} {tile_name(q2)} AFTER PON')
+            turn=caller; continue
 
         left=(turn+1)%4; opts=chi_options(ps[left],q)
         if opts and r.random()<0.10:
             o=ps[left]; seq=r.choice(opts); need=list(seq); need.remove(q)
             _remove(o.h,need); o.m.append(('seq',seq)); o.closed=False; calls+=1
-            q2=discard(o,r); o.h.remove(q2); o.d.append(q2); o.f.add(q2); turn=left; continue
+            log(f'CHI P{left+1} ON P{turn+1} TILE {tile_name(q)} SEQ {[tile_name(x) for x in seq]}')
+            q2=discard(o,r); o.h.remove(q2); o.d.append(q2); o.f.add(q2); log(f'DISCARD P{left+1} {tile_name(q2)} AFTER CHI')
+            turn=left; continue
 
         turn=(turn+1)%4
 
+    log('DRAW GAME')
     return result(39,'draw',None,calls,kans)
 
 
@@ -200,8 +251,22 @@ def run(n,minscore,seed):
     return {'games':n,'min_score':minscore,'win_rate':len(wins)/n,'draw_rate':sum(x['method']=='draw' for x in rows)/n,'ron_rate':sum(x['method']=='ron' for x in wins)/len(wins) if wins else 0,'tsumo_rate':sum(x['method']=='tsumo' for x in wins)/len(wins) if wins else 0,'avg_score':statistics.mean(x['score'] for x in wins) if wins else 0,'avg_end_draw':statistics.mean(x['draws'] for x in rows),'call_rate':sum(x['calls']>0 for x in rows)/n,'kan_rate':sum(x['kans']>0 for x in rows)/n,'super_red':sum(x['yakuman']=='super_red' for x in rows)/n,'all_green':sum(x['yakuman']=='all_green' for x in rows)/n,'chin_yao':sum(x['yakuman']=='chin_yao' for x in rows)/n},rows
 
 
+def debug_games(n,minscore,seed,outdir):
+    os.makedirs(outdir, exist_ok=True)
+    r=random.Random(seed)
+    rows=[]
+    for i in range(1,n+1):
+        path=os.path.join(outdir,f'game_{i:03d}.txt')
+        with open(path,'w',encoding='utf-8') as f:
+            f.write(f'GAME {i} SEED_STREAM {seed}\n')
+            row=play(minscore,r,debug=f)
+            f.write(f'RESULT {row}\n')
+        rows.append(row)
+    return rows
+
+
 if __name__=='__main__':
-    ap=argparse.ArgumentParser(); ap.add_argument('--games',type=int,default=10000); ap.add_argument('--seed',type=int,default=20261017); ap.add_argument('--out',default='results'); a=ap.parse_args(); os.makedirs(a.out,exist_ok=True)
+    ap=argparse.ArgumentParser(); ap.add_argument('--games',type=int,default=10000); ap.add_argument('--seed',type=int,default=20261017); ap.add_argument('--out',default='results'); ap.add_argument('--debug-games',type=int,default=0); ap.add_argument('--debug-min-score',type=int,default=5); ap.add_argument('--debug-out',default='debug_logs'); a=ap.parse_args(); os.makedirs(a.out,exist_ok=True)
     summaries=[]
     for minimum in (4,5):
         summary,rows=run(a.games,minimum,a.seed); summaries.append(summary)
@@ -209,4 +274,6 @@ if __name__=='__main__':
             w=csv.DictWriter(f,fieldnames=rows[0]); w.writeheader(); w.writerows(rows)
     with open(f'{a.out}/summary.csv','w',newline='') as f:
         w=csv.DictWriter(f,fieldnames=summaries[0]); w.writeheader(); w.writerows(summaries)
+    if a.debug_games:
+        debug_games(a.debug_games,a.debug_min_score,a.seed,a.debug_out)
     for s in summaries: print(s)
