@@ -20,6 +20,12 @@ jobs:
         run: python simulator.py --games 20000 --seed 20261017 --out results
       - name: Engine diagnostic audit
         run: python diagnose.py --games 5000 --seed 20261017
+      - name: Debug games
+        run: |
+          mkdir -p debug_logs
+          for seed in $(seq 1 50); do
+            python debug_game.py --seed "$seed" --min-score 5 --max-turns 39 > "debug_logs/game_${seed}.txt"
+          done
       - name: Upload results
         uses: actions/upload-artifact@v4
         with:
@@ -27,3 +33,4 @@ jobs:
           path: |
             results/
             diagnostic.json
+            debug_logs/
