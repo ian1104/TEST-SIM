@@ -9,6 +9,11 @@ def mk(hand, melds=None, closed=True):
     return p
 
 
+def remove(hand, tiles):
+    for t in tiles:
+        hand.remove(t)
+
+
 def test_tile_set_is_72_and_red_is_40():
     deck = [t for t in T for _ in range(4)]
     assert len(deck) == 72
@@ -22,7 +27,6 @@ def test_basic_win_two_sequences_and_pair():
 
 
 def test_multiple_decompositions_are_enumerated():
-    # 11223344p + 55p can be decomposed in more than one valid way.
     p = mk([0, 0, 1, 1, 2, 2, 3, 3])
     assert len(winparts(p)) >= 2
 
@@ -57,7 +61,7 @@ def test_iipeikou_same_suit_only():
 def test_pon_consumes_two_concealed_tiles_not_the_discard():
     p = mk([0, 0, 1, 2, 3])
     assert can_pon(p, 0)
-    _remove_tiles(p.h, [0, 0])
+    remove(p.h, [0, 0])
     p.m.append(('pon', (0, 0, 0)))
     assert p.h == [1, 2, 3]
     assert len(p.m[0][1]) == 3
@@ -77,6 +81,6 @@ def test_open_hand_has_five_concealed_tiles_for_one_open_meld():
 
 def test_ankan_preserves_menzen():
     p = mk([0, 0, 0, 0, 1, 2, 3, 4])
-    _remove_tiles(p.h, [0, 0, 0, 0])
+    remove(p.h, [0, 0, 0, 0])
     p.m.append(('kan', (0, 0, 0, 0)))
     assert p.closed
