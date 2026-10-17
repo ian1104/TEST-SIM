@@ -1,7 +1,6 @@
 from __future__ import annotations
 import csv
 import random
-import statistics
 from collections import Counter
 import simulator
 
@@ -11,8 +10,7 @@ def random_discard(p, r):
 
 
 def basic_discard(p, r):
-    # Simple human-like heuristic: keep pairs and adjacent tiles, but do not
-    # perform the current simulator's extra scoring search.
+    # Simple human-like heuristic: keep pairs and adjacent tiles.
     c = Counter(p.h)
     def value(t):
         n = simulator.num(t)
@@ -31,21 +29,22 @@ def basic_discard(p, r):
     return min(p.h, key=lambda t: (value(t), t))
 
 
+# Preserve the unmodified engine policy before policies are swapped.
+DEFAULT_DISCARD = simulator.discard
+
+
 def current_discard(p, r):
-    return simulator.discard(p, r)
+    return DEFAULT_DISCARD(p, r)
 
 
 def strong_discard(p, r):
-    # Stronger but still legal-information-only heuristic. Prefer discards
-    # that leave more immediate sequence/triplet/pair potential and estimate
-    # one-tile improvement by counting currently useful tile types.
-    c = Counter(p.h)
+    # Stronger local shape heuristic; uses only the player's own hand.
     def potential(hand):
         cc = Counter(hand)
         score = 0.0
         for t, n in cc.items():
             score += max(0, n - 1) * 2.2
-            num = simulator.num(t)
+            tile_num = simulator.num(t)
             for d in (-1, 1):
                 u = t + d
                 if 0 <= u < 18 and simulator.suit(u) == simulator.suit(t) and cc.get(u, 0):
@@ -54,10 +53,8 @@ def strong_discard(p, r):
                 u = t + d
                 if 0 <= u < 18 and simulator.suit(u) == simulator.suit(t) and cc.get(u, 0):
                     score += 0.35 * min(n, cc[u])
-            if num in (1, 9):
+            if tile_num in (1, 9):
                 score -= 0.12
-        # Count distinct tile faces that could complete a simple 3-tile meld
-        # from the remaining hand. This is only a local shape estimate.
         for start in range(1, 8):
             for s in (0, 1):
                 q = [s * 9 + start - 1 + i for i in range(3)]
@@ -87,12 +84,11 @@ POLICIES = {
 
 
 def run_policy(name, games, minscore, seed):
-    old = simulator.discard
     simulator.discard = POLICIES[name]
     try:
         summary, rows = simulator.run(games, minscore, seed)
     finally:
-        simulator.discard = old
+        simulator.discard = DEFAULT_DISCARD
     summary = dict(summary)
     summary["ai"] = name
     return summary, rows
@@ -108,7 +104,10 @@ def main():
             rows.append(s)
             print(s)
     with open("ai_benchmark.csv", "w", newline="") as f:
-        w = csv.DictWriter(f, fieldnames=["ai", "games", "min_score", "win_rate", "draw_rate", "ron_rate", "tsumo_rate", "avg_score", "avg_end_draw", "call_rate", "kan_rate", "super_red", "all_green", "chin_yao"])
+        fields = ["ai", "games", "min_score", "win_rate", "draw_rate", "ron_rate",
+                  "tsumo_rate", "avg_score", "avg_end_draw", "call_rate", "kan_rate",
+                  "super_red", "all_green", "chin_yao"]
+        w = csv.DictWriter(f, fieldnames=fields)
         w.writeheader()
         w.writerows(rows)
 
