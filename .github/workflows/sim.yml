@@ -20,12 +20,21 @@ jobs:
         run: python simulator.py --games 20000 --seed 20261017 --out results
       - name: Engine diagnostic audit
         run: python diagnose.py --games 5000 --seed 20261017
-      - name: Debug games
+      - name: Real engine debug games
+        run: python simulator.py --games 1 --seed 20261017 --out debug_dummy --debug-games 50 --debug-min-score 5 --debug-out debug_logs
+      - name: Analyze debug logs
         run: |
-          mkdir -p debug_logs
-          for seed in $(seq 1 50); do
-            python debug_game.py --seed "$seed" --min-score 5 --max-turns 39 > "debug_logs/game_${seed}.txt"
-          done
+          python - <<'PY'
+          import ast, glob, collections
+          rows=[]
+          for path in glob.glob('debug_logs/game_*.txt'):
+              lines=open(path,encoding='utf-8').read().splitlines()
+              result=next((x for x in lines if x.startswith('RESULT ')), None)
+              if result: rows.append(ast.literal_eval(result[7:]))
+          c=collections.Counter(x['method'] for x in rows)
+          scores=collections.Counter(x['score'] for x in rows if x['method']!='draw')
+          print('DEBUG_SUMMARY', {'games':len(rows),'methods':dict(c),'scores':dict(sorted(scores.items())),'avg_score':sum(x['score'] for x in rows if x['method']!='draw')/max(1,sum(x['method']!='draw' for x in rows))})
+          PY
       - name: Upload results
         uses: actions/upload-artifact@v4
         with:
