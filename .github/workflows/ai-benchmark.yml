@@ -1,0 +1,25 @@
+name: 쌍문 AI strength benchmark
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Rule tests
+        run: pytest -q
+      - name: AI strength benchmark
+        run: python ai_benchmark.py
+      - name: Upload benchmark
+        uses: actions/upload-artifact@v4
+        with:
+          name: ssangmun-ai-benchmark
+          path: ai_benchmark.csv
