@@ -18,8 +18,12 @@ jobs:
         run: pytest -q
       - name: Monte Carlo comparison
         run: python simulator.py --games 20000 --seed 20261017 --out results
+      - name: Engine diagnostic audit
+        run: python diagnose.py --games 5000 --seed 20261017
       - name: Upload results
         uses: actions/upload-artifact@v4
         with:
           name: ssangmun-simulation-results
-          path: results/
+          path: |
+            results/
+            diagnostic.json
