@@ -16,8 +16,8 @@ def test_basic_win_two_sequences_and_pair():
 def test_all_green_definition_excludes_7_sou():
     p=mk([10,11,12,10,11,12,16,16])
     assert score(p,0)[1]=='all_green'
-    # Replace one legal green tile with 7-sou. It is a valid hand shape but not all-green.
-    p2=mk([15,11,12,10,11,12,16,16])
+    # Same valid shape with one terminal replacement: 7-sou cannot be part of a sequence with 2/3/4.
+    p2=mk([15,15,15,10,11,12,16,16])
     assert winparts(p2) is not None
     assert score(p2,0)[1] != 'all_green'
 
@@ -28,7 +28,7 @@ def test_chin_yao_is_terminals_only():
 def test_chanta_requires_every_meld_and_pair_to_touch_19():
     p=mk([1,2,3,6,7,8,0,0])
     assert 'chanta' not in score(p,0)[2]
-    # 123 sequence contains 1; 789 sequence contains 9; the pair is 9s.
+    # 123 sequence and 789 sequence both touch a terminal; pair is 9s.
     p=mk([0,1,2,6,7,8,8,8])
     assert 'chanta' in score(p,0)[2]
 
